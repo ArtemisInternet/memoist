@@ -121,24 +121,22 @@ module Memoist
           #   value
           # end
 
-          module_eval <<-EOS, __FILE__, __LINE__ + 1
-            def #{method_name}(reload = false)
-              skip_cache = reload || !instance_variable_defined?("#{memoized_ivar}")
-              set_cache = skip_cache && !frozen?
+          define_method(method_name) do |reload=false|
+            skip_cache = reload || !instance_variable_defined?(memoized_ivar)
+            set_cache = skip_cache && !frozen?
 
-              if skip_cache
-                value = #{unmemoized_method}
-              else
-                value = #{memoized_ivar}
-              end
-
-              if set_cache
-                #{memoized_ivar} = value
-              end
-
-              value
+            if skip_cache
+              value = send(unmemoized_method)
+            else
+              value = instance_variable_get(memoized_ivar)
             end
-          EOS
+
+            if set_cache
+              instance_variable_set(memoized_ivar, value)
+            end
+
+            value
+          end
         else
 
           # define a method like this;
@@ -163,27 +161,30 @@ module Memoist
           #   value
           # end
 
-          module_eval <<-EOS, __FILE__, __LINE__ + 1
-            def #{method_name}(*args)
-              reload = Memoist.extract_reload!(method(#{unmemoized_method.inspect}), args)
+          define_method(method_name) do |*args|
+            reload = Memoist.extract_reload!(method(unmemoized_method), args)
 
-              skip_cache = reload || !(instance_variable_defined?(#{memoized_ivar.inspect}) && #{memoized_ivar} && #{memoized_ivar}.has_key?(args))
-              set_cache = skip_cache && !frozen?
+            skip_cache = reload || !(instance_variable_defined?(memoized_ivar) &&
+              instance_variable_get(memoized_ivar) &&
+              instance_variable_get(memoized_ivar).has_key?(args))
 
-              if skip_cache
-                value = #{unmemoized_method}(*args)
-              else
-                value = #{memoized_ivar}[args]
-              end
+            set_cache = skip_cache && !frozen?
 
-              if set_cache
-                #{memoized_ivar} ||= {}
-                #{memoized_ivar}[args] = value
-              end
-
-              value
+            if skip_cache
+              value = send(unmemoized_method, *args)
+            else
+              value = instance_variable_get(memoized_ivar)[args]
             end
-          EOS
+
+            if set_cache
+              instance_variable_get(memoized_ivar) ||
+                instance_variable_set(memoized_ivar, {})
+
+              instance_variable_get(memoized_ivar)[args] = value
+            end
+
+            value
+          end
         end
 
         if private_method_defined?(unmemoized_method)
